@@ -26,18 +26,43 @@ const run = async () => {
     const database = client.db("captake");
     const seller = database.collection("seller");
 
+    // Get all the seller from here
     app.get("/all-seller", async (req, res) => {
       const option = {
         projection: { password: 0 },
       };
-
-      const result = await seller.find({}, option).toArray();
-      if (result.length) {
+      try {
+        const result = await seller.find({}, option).toArray();
         res.status(200).json(result);
-      } else {
+      } catch (error) {
         res.status(204).json({ message: "No seller found" });
       }
     });
+
+    // Seller update from here
+    app.patch("/update-seller", async (req, res) => {
+      const updatedSeller = req.body;
+
+      const filter = { _id: new ObjectId(updatedSeller._id) };
+      const option = { upsert: true };
+      const updatedDoc = {
+        $set: {
+          ...updatedSeller.data,
+        },
+      };
+
+      try {
+        const result = await seller.updateOne(filter, updatedDoc, option);
+        res.status(200).json(result);
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: "An error occurred while updating the seller" });
+      }
+    });
+
+
+    
   } finally {
     // await client.close();
   }
