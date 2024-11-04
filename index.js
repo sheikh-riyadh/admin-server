@@ -24,30 +24,37 @@ const run = async () => {
     await client.connect();
     await client.db("admin").command({ ping: 1 });
     const database = client.db("captake");
-    const seller = database.collection("seller");
 
-    // Get all the seller from here
+    //seller
+    const seller = database.collection("seller");
+    const staff = database.collection("staff");
+    staff.createIndex({ email: 1 }, { unique: true });
+
+    /* 1. -------Seller section start here------- */
+
     app.get("/all-seller", async (req, res) => {
+      const { status } = req.query;
+      let query = { status };
+
       const option = {
         projection: { password: 0 },
       };
       try {
-        const result = await seller.find({}, option).toArray();
+        const result = await seller.find(query, option).toArray();
         res.status(200).json(result);
       } catch (error) {
         res.status(204).json({ message: "No seller found" });
       }
     });
 
-    // Seller update from here
     app.patch("/update-seller", async (req, res) => {
-      const updatedSeller = req.body;
+      const { _id, data } = req.body;
 
-      const filter = { _id: new ObjectId(updatedSeller._id) };
+      const filter = { _id: new ObjectId(_id) };
       const option = { upsert: true };
       const updatedDoc = {
         $set: {
-          ...updatedSeller.data,
+          ...data,
         },
       };
 
@@ -61,8 +68,86 @@ const run = async () => {
       }
     });
 
+    app.delete("/delete-seller/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      try {
+        const result = await seller.deleteOne(query);
+        if (result.deletedCount === 1) {
+          res.status(200).json({ message: "Seller deleted successfully" });
+        } else {
+          res.status(404).json({ message: "Seller not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error deleting seller" });
+      }
+    });
 
-    
+    /* 2. -------Staff section start here------- */
+
+    app.get("/all-staff", async (req, res) => {
+      try {
+        const result = await staff.find({}).toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(204).json({ message: "No staff found" });
+      }
+    });
+
+    app.post("/create-staff", async (req, res) => {
+      const staffData = {
+        ...req.body,
+        status: "active",
+        createdAt: new Date().toISOString(),
+      };
+
+      try {
+        await staff.insertOne(staffData);
+        res.status(201).json({ message: "Staff member created successfully" });
+      } catch (error) {
+        if (error.code === 11000) {
+          res.status(400).json({ message: "Email already exists" });
+        } else {
+          res.status(500).json({ message: "Error creating staff member" });
+        }
+      }
+    });
+
+    app.patch("/update-staff", async (req, res) => {
+      const { data, _id } = req.body;
+
+      const filter = { _id: new ObjectId(_id) };
+      const option = { upsert: true };
+      const updatedDoc = {
+        $set: {
+          ...data,
+        },
+      };
+
+      try {
+        const result = await staff.updateOne(filter, updatedDoc, option);
+        res.status(200).json(result);
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: "An error occurred while updating the staff" });
+      }
+    });
+
+    app.delete("/delete-staff/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      try {
+        const result = await staff.deleteOne(query);
+        if (result.deletedCount === 1) {
+          res.status(200).json({ message: "Staff deleted successfully" });
+        } else {
+          res.status(404).json({ message: "Staff not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error deleting staff" });
+      }
+    });
   } finally {
     // await client.close();
   }
