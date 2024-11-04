@@ -28,6 +28,7 @@ const run = async () => {
     //seller
     const seller = database.collection("seller");
     const staff = database.collection("staff");
+    const admin_banner = database.collection("admin_banner");
     staff.createIndex({ email: 1 }, { unique: true });
 
     /* 1. -------Seller section start here------- */
@@ -146,6 +147,27 @@ const run = async () => {
         }
       } catch (error) {
         res.status(500).json({ message: "Error deleting staff" });
+      }
+    });
+
+    /* 3. -------Banner section start here------- */
+
+    app.get("/all-banner", async (req, res) => {
+      try {
+        const result = await admin_banner.find({}).toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(204).json({ message: "No banner found" });
+      }
+    });
+
+    app.post("/create-banner", async (req, res) => {
+      const data = req.body;
+      try {
+        await admin_banner.insertOne(data);
+        res.status(201).json({ message: "Banner created successfully" });
+      } catch (error) {
+        res.status(500).json({ message: "Error creating banner" });
       }
     });
   } finally {
