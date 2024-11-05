@@ -152,9 +152,10 @@ const run = async () => {
 
     /* 3. -------Banner section start here------- */
 
-    app.get("/all-banner", async (req, res) => {
+    app.get("/banner/:type", async (req, res) => {
+      const type = req.params.type;
       try {
-        const result = await admin_banner.find({}).toArray();
+        const result = await admin_banner.findOne({ type });
         res.status(200).json(result);
       } catch (error) {
         res.status(204).json({ message: "No banner found" });
@@ -163,11 +164,44 @@ const run = async () => {
 
     app.post("/create-banner", async (req, res) => {
       const data = req.body;
+
       try {
+        if (data.default === true) {
+          const oppositeType = data.type === "image" ? "video" : "image";
+
+          await admin_banner.updateMany(
+            { type: oppositeType, default: true },
+            { $set: { default: false } }
+          );
+        }
+
         await admin_banner.insertOne(data);
         res.status(201).json({ message: "Banner created successfully" });
       } catch (error) {
+        console.error("Error creating banner:", error);
         res.status(500).json({ message: "Error creating banner" });
+      }
+    });
+
+    app.patch("/update-banner", async (req, res) => {
+      const { data, _id } = req.body;
+
+      const filter = { _id: new ObjectId(_id) };
+      const option = { upsert: true };
+
+      const updatedDoc = {
+        $set: {
+          ...data,
+        },
+      };
+
+      try {
+        const result = await admin_banner.updateOne(filter, updatedDoc, option);
+        res.status(200).json(result);
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: "An error occurred while updating the staff" });
       }
     });
   } finally {
