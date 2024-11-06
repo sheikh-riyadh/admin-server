@@ -154,8 +154,18 @@ const run = async () => {
 
     app.get("/banner/:type", async (req, res) => {
       const type = req.params.type;
+
       try {
         const result = await admin_banner.findOne({ type });
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(204).json({ message: "No banner found" });
+      }
+    });
+
+    app.get("/banner", async (req, res) => {
+      try {
+        const result = await admin_banner.findOne({ default: true });
         res.status(200).json(result);
       } catch (error) {
         res.status(204).json({ message: "No banner found" });
@@ -185,6 +195,15 @@ const run = async () => {
 
     app.patch("/update-banner", async (req, res) => {
       const { data, _id } = req.body;
+
+      if (data.default === true) {
+        const oppositeType = data.type === "image" ? "video" : "image";
+
+        await admin_banner.updateMany(
+          { type: oppositeType, default: true },
+          { $set: { default: false } }
+        );
+      }
 
       const filter = { _id: new ObjectId(_id) };
       const option = { upsert: true };
