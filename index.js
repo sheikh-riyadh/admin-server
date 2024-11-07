@@ -1,4 +1,5 @@
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const moment = require("moment");
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
@@ -25,15 +26,18 @@ const run = async () => {
     await client.db("admin").command({ ping: 1 });
     const database = client.db("captake");
 
-    //seller
+    /*==== Collections start from here ====*/
     const seller = database.collection("seller");
     const staff = database.collection("staff");
     const admin_banner = database.collection("admin_banner");
     staff.createIndex({ email: 1 }, { unique: true });
+    const admin_message = database.collection("admin_message");
 
-    /* 1. -------Seller section start here------- */
+    /*====================================
+        1. Seller section start here
+      ====================================*/
 
-    app.get("/all-seller", async (req, res) => {
+    app.get("/admin-all-seller", async (req, res) => {
       const { status } = req.query;
       let query = { status };
 
@@ -48,7 +52,7 @@ const run = async () => {
       }
     });
 
-    app.patch("/update-seller", async (req, res) => {
+    app.patch("/admin-update-seller", async (req, res) => {
       const { _id, data } = req.body;
 
       const filter = { _id: new ObjectId(_id) };
@@ -69,7 +73,7 @@ const run = async () => {
       }
     });
 
-    app.delete("/delete-seller/:id", async (req, res) => {
+    app.delete("/admin-delete-seller/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       try {
@@ -84,9 +88,11 @@ const run = async () => {
       }
     });
 
-    /* 2. -------Staff section start here------- */
+    /*====================================
+        2. Staff section start here
+      ====================================*/
 
-    app.get("/all-staff", async (req, res) => {
+    app.get("/admin-all-staff", async (req, res) => {
       try {
         const result = await staff.find({}).toArray();
         res.status(200).json(result);
@@ -95,7 +101,7 @@ const run = async () => {
       }
     });
 
-    app.post("/create-staff", async (req, res) => {
+    app.post("/admin-create-staff", async (req, res) => {
       const staffData = {
         ...req.body,
         status: "active",
@@ -114,7 +120,7 @@ const run = async () => {
       }
     });
 
-    app.patch("/update-staff", async (req, res) => {
+    app.patch("/admin-update-staff", async (req, res) => {
       const { data, _id } = req.body;
 
       const filter = { _id: new ObjectId(_id) };
@@ -135,7 +141,7 @@ const run = async () => {
       }
     });
 
-    app.delete("/delete-staff/:id", async (req, res) => {
+    app.delete("/admin-delete-staff/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       try {
@@ -150,9 +156,11 @@ const run = async () => {
       }
     });
 
-    /* 3. -------Banner section start here------- */
+    /*====================================
+        3. Banner section start here
+      ====================================*/
 
-    app.get("/banner/:type", async (req, res) => {
+    app.get("/admin-banner/:type", async (req, res) => {
       const type = req.params.type;
 
       try {
@@ -163,7 +171,7 @@ const run = async () => {
       }
     });
 
-    app.get("/banner", async (req, res) => {
+    app.get("/admin-default-banner", async (req, res) => {
       try {
         const result = await admin_banner.findOne({ default: true });
         res.status(200).json(result);
@@ -172,7 +180,7 @@ const run = async () => {
       }
     });
 
-    app.post("/create-banner", async (req, res) => {
+    app.post("/admin-create-banner", async (req, res) => {
       const data = req.body;
 
       try {
@@ -188,12 +196,11 @@ const run = async () => {
         await admin_banner.insertOne(data);
         res.status(201).json({ message: "Banner created successfully" });
       } catch (error) {
-        console.error("Error creating banner:", error);
         res.status(500).json({ message: "Error creating banner" });
       }
     });
 
-    app.patch("/update-banner", async (req, res) => {
+    app.patch("/admin-update-banner", async (req, res) => {
       const { data, _id } = req.body;
 
       if (data.default === true) {
@@ -221,6 +228,72 @@ const run = async () => {
         res
           .status(500)
           .json({ message: "An error occurred while updating the staff" });
+      }
+    });
+
+    /*====================================
+        1. Message section start here
+      ====================================*/
+    app.get("/admin-message", async (req, res) => {
+      try {
+        const result = await admin_message.find({}).toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(204).json({ message: "No mesage found" });
+      }
+    });
+
+    app.post("/admin-create-message", async (req, res) => {
+      const data = req.body;
+      try {
+        const result = await admin_message.insertOne({
+          ...data,
+          date: moment().format("L"),
+        });
+        res.status(201).json({ message: "Message created successfully" });
+      } catch (error) {
+        res.status(500).json({ message: "Error creating message" });
+      }
+    });
+
+    app.patch("/admin-update-message", async (req, res) => {
+      const { _id, data } = req.body;
+      const option = { upsert: true };
+      const filter = {
+        _id: new ObjectId(_id),
+      };
+      const updateData = {
+        $set: {
+          ...data,
+          date: moment().format("L"),
+        },
+      };
+
+      try {
+        const result = await admin_message.updateOne(
+          filter,
+          updateData,
+          option
+        );
+        res.status(200).json(result);
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: "An error occurred while updating the message" });
+      }
+    });
+
+    app.delete("/admin-delete-message/:id", async (req, res) => {
+      const query = { _id: new ObjectId(req.params.id) };
+      try {
+        const result = await admin_message.deleteOne(query);
+        if (result.deletedCount === 1) {
+          res.status(200).json({ message: "Message deleted successfully" });
+        } else {
+          res.status(404).json({ message: "Message not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error deleting message" });
       }
     });
   } finally {
