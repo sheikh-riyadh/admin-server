@@ -28,10 +28,12 @@ const run = async () => {
 
     /*==== Collections start from here ====*/
     const seller = database.collection("seller");
-    const staff = database.collection("staff");
+    const staff = database.collection("admin_staff");
     const admin_banner = database.collection("admin_banner");
     staff.createIndex({ email: 1 }, { unique: true });
     const admin_message = database.collection("admin_message");
+    const category = database.collection("category");
+    category.createIndex({ category: 1 }, { unique: true });
 
     /*====================================
         1. Seller section start here
@@ -94,7 +96,7 @@ const run = async () => {
 
     app.get("/admin-all-staff", async (req, res) => {
       try {
-        const result = await staff.find({}).toArray();
+        const result = await admin_staff.find({}).toArray();
         res.status(200).json(result);
       } catch (error) {
         res.status(204).json({ message: "No staff found" });
@@ -109,7 +111,7 @@ const run = async () => {
       };
 
       try {
-        await staff.insertOne(staffData);
+        await admin_staff.insertOne(staffData);
         res.status(201).json({ message: "Staff member created successfully" });
       } catch (error) {
         if (error.code === 11000) {
@@ -132,7 +134,7 @@ const run = async () => {
       };
 
       try {
-        const result = await staff.updateOne(filter, updatedDoc, option);
+        const result = await admin_staff.updateOne(filter, updatedDoc, option);
         res.status(200).json(result);
       } catch (error) {
         res
@@ -145,7 +147,7 @@ const run = async () => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       try {
-        const result = await staff.deleteOne(query);
+        const result = await admin_staff.deleteOne(query);
         if (result.deletedCount === 1) {
           res.status(200).json({ message: "Staff deleted successfully" });
         } else {
@@ -294,6 +296,64 @@ const run = async () => {
         }
       } catch (error) {
         res.status(500).json({ message: "Error deleting message" });
+      }
+    });
+
+    /*====================================
+        1. Message section start here
+      ====================================*/
+
+    app.get("/categories", async (req, res) => {
+      try {
+        const result = await category.find({}).toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(500).json({ message: "An error occurred" });
+      }
+    });
+
+    app.post("/create-category", async (req, res) => {
+      const data = req.body;
+      try {
+        const result = await category.insertOne(data);
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(500).json({ message: "An error occurred" });
+      }
+    });
+
+    app.patch("/update-category", async (req, res) => {
+      const { _id, data } = req.body;
+      const option = {
+        upsert: true,
+      };
+      const filter = {
+        _id: new ObjectId(_id),
+      };
+
+      const updateData = {
+        $set: {
+          ...data,
+        },
+      };
+      try {
+        const result = await category.updateOne(filter, updateData, option);
+        res.status(200).json(result);
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: "An error occurred while updating categroy" });
+      }
+    });
+
+    app.delete("/delete-category/:id", async (req, res) => {
+      const id = req.params.id;
+      try {
+        const result = await category.deleteOne({ _id: new ObjectId(id) });
+      } catch (error) {
+        res
+          .status(500)
+          .json({ message: "An error occurred while deleting category" });
       }
     });
   } finally {
