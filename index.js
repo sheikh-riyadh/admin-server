@@ -28,12 +28,16 @@ const run = async () => {
 
     /*==== Collections start from here ====*/
     const seller = database.collection("seller");
-    const staff = database.collection("admin_staff");
+    const seller_products = database.collection("seller_products");
+    const admin_staff = database.collection("admin_staff");
     const admin_banner = database.collection("admin_banner");
-    staff.createIndex({ email: 1 }, { unique: true });
+    admin_staff.createIndex({ email: 1 }, { unique: true });
     const admin_message = database.collection("admin_message");
     const category = database.collection("category");
     category.createIndex({ category: 1 }, { unique: true });
+    const user_report = database.collection("user_report");
+    const feedback = database.collection("feedback");
+    const user_order = database.collection("user_order");
 
     /*====================================
         1. Seller section start here
@@ -51,6 +55,20 @@ const run = async () => {
         res.status(200).json(result);
       } catch (error) {
         res.status(204).json({ message: "No seller found" });
+      }
+    });
+
+    app.get("/admin-seller-by-id/:sellerId", async (req, res) => {
+      const sellerId = req.params.sellerId;
+      try {
+        const result = await seller.findOne({ _id: new ObjectId(sellerId) });
+        if (result?._id) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "Seller not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding seller" });
       }
     });
 
@@ -91,6 +109,45 @@ const run = async () => {
     });
 
     /*====================================
+        2. seller products section start here
+      ====================================*/
+
+    app.get("/seller-products", async (req, res) => {
+      try {
+        const result = await seller_products.find({}).toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "product not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding product" });
+      }
+    });
+
+    app.patch("/update-product-status", async (req, res) => {
+      const { _id, data } = req.body;
+      const option = { upsert: false };
+      const filter = { _id: new ObjectId(_id) };
+      updateData = {
+        $set: {
+          status: data?.status,
+        },
+      };
+
+      try {
+        const result = await seller_products.updateOne(
+          filter,
+          updateData,
+          option
+        );
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(500).json({ message: "Error while updating product" });
+      }
+    });
+
+    /*====================================
         2. Staff section start here
       ====================================*/
 
@@ -109,7 +166,6 @@ const run = async () => {
         status: "active",
         createdAt: new Date().toISOString(),
       };
-
       try {
         await admin_staff.insertOne(staffData);
         res.status(201).json({ message: "Staff member created successfully" });
@@ -318,7 +374,11 @@ const run = async () => {
         const result = await category.insertOne(data);
         res.status(200).json(result);
       } catch (error) {
-        res.status(500).json({ message: "An error occurred" });
+        if (error.code === 11000) {
+          res.status(400).json({ message: "Category already exists" });
+        } else {
+          res.status(500).json({ message: "Error while create category" });
+        }
       }
     });
 
@@ -340,9 +400,13 @@ const run = async () => {
         const result = await category.updateOne(filter, updateData, option);
         res.status(200).json(result);
       } catch (error) {
-        res
-          .status(500)
-          .json({ message: "An error occurred while updating categroy" });
+        if (error.code === 11000) {
+          res.status(400).json({ message: "Category already exists" });
+        } else {
+          res
+            .status(500)
+            .json({ message: "An error occurred while updating categroy" });
+        }
       }
     });
 
@@ -354,6 +418,65 @@ const run = async () => {
         res
           .status(500)
           .json({ message: "An error occurred while deleting category" });
+      }
+    });
+
+    /*====================================
+        1. User report section start here
+      ====================================*/
+    app.get("/user-reports", async (req, res) => {
+      try {
+        const result = await user_report
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "Report not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding reports" });
+      }
+    });
+
+    /*====================================
+        1. User feedback section start here
+      ====================================*/
+
+    app.get("/feedback", async (req, res) => {
+      try {
+        const result = await feedback
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "feedback not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding feedback" });
+      }
+    });
+
+    /*====================================
+        3. Banner section start here
+      ====================================*/
+
+    app.get("/user-order", async (req, res) => {
+      try {
+        const result = await user_order
+          .find({})
+          .sort({ createdAt: -1 })
+          .toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "order not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding order" });
       }
     });
   } finally {
