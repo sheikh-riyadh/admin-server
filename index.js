@@ -38,6 +38,8 @@ const run = async () => {
     const user_report = database.collection("user_report");
     const feedback = database.collection("feedback");
     const user_order = database.collection("user_order");
+    const user_review = database.collection("user_review");
+    const product_questions = database.collection("product_questions");
 
     /*====================================
         1. Seller section start here
@@ -477,6 +479,48 @@ const run = async () => {
         }
       } catch (error) {
         res.status(500).json({ message: "Error while finding order" });
+      }
+    });
+
+    /*=========================================
+        3. Product review section start here
+      =========================================*/
+    app.get("/product-review/:productId", async (req, res) => {
+      const productId = req.params.productId;
+
+      try {
+        const result = await user_review
+          .find({ "productInfo.productId": productId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "Review not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding review" });
+      }
+    });
+
+    /*=========================================
+        3. Product question section start here
+      =========================================*/
+    app.get("/product-questions/:productId", async (req, res) => {
+      const productId = req.params.productId;
+
+      try {
+        const result = await product_questions
+          .find({ "question.productInfo.productId": productId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "Question not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding question" });
       }
     });
   } finally {
