@@ -29,6 +29,8 @@ const run = async () => {
     /*==== Collections start from here ====*/
     const seller = database.collection("seller");
     const seller_products = database.collection("seller_products");
+    const seller_banner = database.collection("seller_banner");
+    const seller_location = database.collection("seller_location");
     const admin_staff = database.collection("admin_staff");
     const admin_banner = database.collection("admin_banner");
     admin_staff.createIndex({ email: 1 }, { unique: true });
@@ -39,6 +41,7 @@ const run = async () => {
     const feedback = database.collection("feedback");
     const user_order = database.collection("user_order");
     const user_review = database.collection("user_review");
+    const user = database.collection("user");
     const product_questions = database.collection("product_questions");
 
     /*====================================
@@ -121,6 +124,23 @@ const run = async () => {
           res.status(200).json(result);
         } else {
           res.status(404).json({ message: "product not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding product" });
+      }
+    });
+
+    app.get("/seller-product-by-id/:sellerId", async (req, res) => {
+      const sellerId = req.params.sellerId;
+      try {
+        const result = await seller_products
+          .find({ sellerId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "Product not found" });
         }
       } catch (error) {
         res.status(500).json({ message: "Error while finding product" });
@@ -217,7 +237,7 @@ const run = async () => {
     });
 
     /*====================================
-        3. Banner section start here
+        3. Admin Banner section start here
       ====================================*/
 
     app.get("/admin-banner/:type", async (req, res) => {
@@ -288,6 +308,40 @@ const run = async () => {
         res
           .status(500)
           .json({ message: "An error occurred while updating the staff" });
+      }
+    });
+
+    /*====================================
+        1. Seller banner section start here
+      ====================================*/
+    app.get("/seller-banner/:sellerId", async (req, res) => {
+      const sellerId = req.params.sellerId;
+      try {
+        const result = await seller_banner.find({ sellerId }).toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "Seller banner not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding banner" });
+      }
+    });
+
+    /*========================================
+        1. Seller location section start here
+      ========================================*/
+    app.get("/seller-location/:sellerId", async (req, res) => {
+      const sellerId = req.params.sellerId;
+      try {
+        const result = await seller_location.findOne({ sellerId });
+        if (result) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "Seller location not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding location" });
       }
     });
 
@@ -482,6 +536,49 @@ const run = async () => {
       }
     });
 
+    app.get("/order-by-sellerId/:sellerId", async (req, res) => {
+      const sellerId = req.params.sellerId;
+      try {
+        const result = await user_order
+          .find({ sellerId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "order not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding order" });
+      }
+    });
+
+    app.get("/order-by-userId/:userId", async (req, res) => {
+      const userId = req.params.userId;
+      try {
+        const result = await user_order
+          .find({ userId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding order" });
+      }
+    });
+
+    app.get("/cancel-order-by-userId", async (req, res) => {
+      const { userId, status } = req.query;
+      try {
+        const result = await user_order
+          .find({ userId, status })
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding order" });
+      }
+    });
+
     /*=========================================
         3. Product review section start here
       =========================================*/
@@ -500,6 +597,75 @@ const run = async () => {
         }
       } catch (error) {
         res.status(500).json({ message: "Error while finding review" });
+      }
+    });
+
+    app.get("/product-review-by-sellerId/:sellerId", async (req, res) => {
+      const sellerId = req.params.sellerId;
+      try {
+        const result = await user_review
+          .find({ sellerId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "Review not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding review" });
+      }
+    });
+
+    app.get("/product-review-by-userId/:userId", async (req, res) => {
+      const userId = req.params.userId;
+      try {
+        const result = await user_review
+          .find({ userId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        if (result?.length) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "Review not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding review" });
+      }
+    });
+
+    /*=========================================
+        3. User section start here
+      =========================================*/
+
+    app.get("/user/:status", async (req, res) => {
+      const status = req.params.status;
+      try {
+        const result = await user
+          .find({ status })
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding user" });
+      }
+    });
+
+    app.patch("/update-user-status", async (req, res) => {
+      const { _id, data } = req.body;
+      const option = { upsert: false };
+      const filter = { _id: new ObjectId(_id) };
+      updateData = {
+        $set: {
+          status: data?.status,
+        },
+      };
+
+      try {
+        const result = await user.updateOne(filter, updateData, option);
+        res.status(200).json(result);
+      } catch (error) {
+        res.status(500).json({ message: "Error while updating user" });
       }
     });
 
