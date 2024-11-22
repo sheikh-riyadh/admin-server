@@ -173,12 +173,34 @@ const run = async () => {
         2. Staff section start here
       ====================================*/
 
-    app.get("/admin-all-staff", async (req, res) => {
+    app.get("/admin-all-staff/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email: { $ne: email }, role: "admin" };
+      const option = {
+        projection: { password: 0 },
+      };
       try {
-        const result = await admin_staff.find({}).toArray();
+        const result = await admin_staff.find(query, option).toArray();
         res.status(200).json(result);
       } catch (error) {
         res.status(204).json({ message: "No staff found" });
+      }
+    });
+
+    app.get("/admin-by-email/:email", async (req, res) => {
+      const email = req.params.email;
+      const option = {
+        projection: { password: 0 },
+      };
+      try {
+        const result = await admin_staff.findOne({ email }, option);
+        if (result) {
+          res.status(200).json(result);
+        } else {
+          res.status(404).json({ message: "user not found" });
+        }
+      } catch (error) {
+        res.status(500).json({ message: "Error while finding user" });
       }
     });
 
