@@ -2,13 +2,27 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const moment = require("moment");
 const express = require("express");
 const cors = require("cors");
+const jwt = require("jsonwebtoken");
+const cookieParser = require("cookie-parser");
 require("dotenv").config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-// Middleware
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "https://seller-center-32880.web.app",
+      "https://seller-center-32880.firebaseapp.com",
+      "https://captake-web.firebaseapp.com",
+      "https://captake-web.web.app",
+      "http://localhost:5173",
+    ],
+    credentials: true,
+  })
+);
 app.use(express.json());
+app.use(cookieParser());
+app.options("*", cors());
 
 const uri = `mongodb+srv://${process.env.USER_NAME}:${process.env.USER_PASSWORD}@cluster0.wjboujk.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -20,10 +34,30 @@ const client = new MongoClient(uri, {
   },
 });
 
+const cookieOptions = {
+  httpOnly: true,
+  sameSite: process.env.NODE_ENV === "production" ? "none" : "strict",
+  secure: process.env.NODE_ENV === "production" ? true : false,
+};
+
+const verify = async (req, res, next) => {
+  const token = req.cookies?.captake_admin_token;
+  if (!token) {
+    res.status(401).json({ message: "Unauthorized" });
+    return;
+  }
+  jwt.verify(token, process.env.JWT_TOKEN, (error, decoded) => {
+    if (error) {
+      res.status(401).json({ message: "Unauthorized" });
+      return;
+    }
+    req.user = decoded;
+    next();
+  });
+};
+
 const run = async () => {
   try {
-    await client.connect();
-    await client.db("admin").command({ ping: 1 });
     const database = client.db("captake");
 
     /*==== Collections start from here ====*/
@@ -45,26 +79,66 @@ const run = async () => {
     const product_questions = database.collection("product_questions");
 
     /*====================================
+      JWT GENERATE
+    ====================================== */
+    app.post("/jwt", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.JWT_TOKEN, {
+        expiresIn: "1d",
+      });
+      res
+        .cookie("captake_admin_token", token, cookieOptions)
+        .status(201)
+        .json({ message: "success" });
+    });
+
+    app.get("/logout", async (req, res) => {
+      res
+        .clearCookie("captake_admin_token", { ...cookieOptions, maxAge: 0 })
+        .status(200)
+        .json({ message: "success" });
+    });
+
+    /*====================================
         1. Seller section start here
       ====================================*/
 
-    app.get("/admin-all-seller", async (req, res) => {
-      const { status } = req.query;
-      let query = { status };
-
-      const option = {
-        projection: { password: 0 },
+    app.get("/admin-all-seller", verify, async (req, res) => {
+      const { status, email, search = "", page = 0, limit = 10 } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+      const query = {
+        status,
+        $or: [
+          { fullName: { $regex: search, $options: "i" } },
+          { businessName: { $regex: search, $options: "i" } },
+          { zipCode: { $regex: search, $options: "i" } },
+          { email: { $regex: search, $options: "i" } },
+        ],
       };
+
       try {
-        const result = await seller.find(query, option).toArray();
-        res.status(200).json(result);
+        const result = await seller
+          .find(query)
+          .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
+          .toArray();
+        const total = await seller.countDocuments();
+        res.status(200).json({ total, data: result });
       } catch (error) {
-        res.status(204).json({ message: "No seller found" });
+        res.status(500).json({ message: "Error while finding seller" });
       }
     });
 
-    app.get("/admin-seller-by-id/:sellerId", async (req, res) => {
-      const sellerId = req.params.sellerId;
+    app.get("/admin-seller-by-id", verify, async (req, res) => {
+      const { sellerId, email } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       try {
         const result = await seller.findOne({ _id: new ObjectId(sellerId) });
         if (result?._id) {
@@ -77,8 +151,12 @@ const run = async () => {
       }
     });
 
-    app.patch("/admin-update-seller", async (req, res) => {
-      const { _id, data } = req.body;
+    app.patch("/admin-update-seller", verify, async (req, res) => {
+      const { _id, data, email } = req.body;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
 
       const filter = { _id: new ObjectId(_id) };
       const option = { upsert: true };
@@ -98,8 +176,12 @@ const run = async () => {
       }
     });
 
-    app.delete("/admin-delete-seller/:id", async (req, res) => {
-      const id = req.params.id;
+    app.delete("/admin-delete-seller", verify, async (req, res) => {
+      const { id, email } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       const query = { _id: new ObjectId(id) };
       try {
         const result = await seller.deleteOne(query);
@@ -117,11 +199,28 @@ const run = async () => {
         2. seller products section start here
       ====================================*/
 
-    app.get("/seller-products", async (req, res) => {
+    app.get("/seller-products", verify, async (req, res) => {
+      const { email, search = "", page, limit } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+      const query = {
+        title: { $regex: search, $options: "i" },
+      };
+
       try {
-        const result = await seller_products.find({}).toArray();
+        const result = await seller_products
+          .find(query)
+          .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
+          .toArray();
+
+        const total = await seller_products.countDocuments();
+
         if (result?.length) {
-          res.status(200).json(result);
+          res.status(200).json({ total, data: result });
         } else {
           res.status(404).json({ message: "product not found" });
         }
@@ -130,25 +229,44 @@ const run = async () => {
       }
     });
 
-    app.get("/seller-product-by-id/:sellerId", async (req, res) => {
-      const sellerId = req.params.sellerId;
+    app.get("/seller-product-by-id", verify, async (req, res) => {
+      const { sellerId, email, limit, page, search } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
+      const query = {
+        sellerId,
+        $or: [
+          { title: { $regex: search, $options: "i" } },
+          { status: { $regex: search, $options: "i" } },
+        ],
+      };
+
       try {
         const result = await seller_products
-          .find({ sellerId })
+          .find(query)
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        if (result?.length) {
-          res.status(200).json(result);
-        } else {
-          res.status(404).json({ message: "Product not found" });
-        }
+
+        const total = await seller_products.countDocuments({ sellerId });
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding product" });
       }
     });
 
-    app.patch("/update-product-status", async (req, res) => {
-      const { _id, data } = req.body;
+    app.patch("/update-product-status", verify, async (req, res) => {
+      const { _id, data, email } = req.body;
+
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
       const option = { upsert: false };
       const filter = { _id: new ObjectId(_id) };
       updateData = {
@@ -173,25 +291,32 @@ const run = async () => {
         2. Staff section start here
       ====================================*/
 
-    app.get("/admin-all-staff/:email", async (req, res) => {
+    app.get("/admin-all-staff/:email", verify, async (req, res) => {
       const email = req.params.email;
       const query = { email: { $ne: email }, role: "admin" };
-      const option = {
-        projection: { password: 0 },
-      };
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       try {
-        const result = await admin_staff.find(query, option).toArray();
+        const result = await admin_staff.find(query).toArray();
         res.status(200).json(result);
       } catch (error) {
         res.status(204).json({ message: "No staff found" });
       }
     });
 
-    app.get("/admin-by-email/:email", async (req, res) => {
+    app.get("/admin-by-email/:email", verify, async (req, res) => {
       const email = req.params.email;
       const option = {
         projection: { password: 0 },
       };
+
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
       try {
         const result = await admin_staff.findOne({ email }, option);
         if (result) {
@@ -204,7 +329,11 @@ const run = async () => {
       }
     });
 
-    app.post("/admin-create-staff", async (req, res) => {
+    app.post("/admin-create-staff", verify, async (req, res) => {
+      if (data?.adminEmail !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       const staffData = {
         ...req.body,
         status: "active",
@@ -222,8 +351,13 @@ const run = async () => {
       }
     });
 
-    app.patch("/admin-update-staff", async (req, res) => {
-      const { data, _id } = req.body;
+    app.patch("/admin-update-staff", verify, async (req, res) => {
+      const { data, _id, adminEmail } = req.body;
+
+      if (adminEmail !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
 
       const filter = { _id: new ObjectId(_id) };
       const option = { upsert: true };
@@ -243,8 +377,12 @@ const run = async () => {
       }
     });
 
-    app.delete("/admin-delete-staff/:id", async (req, res) => {
-      const id = req.params.id;
+    app.delete("/admin-delete-staff", verify, async (req, res) => {
+      const { email, id } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       const query = { _id: new ObjectId(id) };
       try {
         const result = await admin_staff.deleteOne(query);
@@ -262,8 +400,12 @@ const run = async () => {
         3. Admin Banner section start here
       ====================================*/
 
-    app.get("/admin-banner/:type", async (req, res) => {
-      const type = req.params.type;
+    app.get("/admin-banner", verify, async (req, res) => {
+      const { type, email } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
 
       try {
         const result = await admin_banner.findOne({ type });
@@ -273,7 +415,12 @@ const run = async () => {
       }
     });
 
-    app.get("/admin-default-banner", async (req, res) => {
+    app.get("/admin-default-banner/:email", verify, async (req, res) => {
+      const email = req.params.email;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       try {
         const result = await admin_banner.findOne({ default: true });
         res.status(200).json(result);
@@ -282,8 +429,12 @@ const run = async () => {
       }
     });
 
-    app.post("/admin-create-banner", async (req, res) => {
-      const data = req.body;
+    app.post("/admin-create-banner", verify, async (req, res) => {
+      const { email, data } = req.body;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
 
       try {
         if (data.default === true) {
@@ -302,8 +453,12 @@ const run = async () => {
       }
     });
 
-    app.patch("/admin-update-banner", async (req, res) => {
-      const { data, _id } = req.body;
+    app.patch("/admin-update-banner", verify, async (req, res) => {
+      const { data, _id, email } = req.body;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
 
       if (data.default === true) {
         const oppositeType = data.type === "image" ? "video" : "image";
@@ -336,8 +491,13 @@ const run = async () => {
     /*====================================
         1. Seller banner section start here
       ====================================*/
-    app.get("/seller-banner/:sellerId", async (req, res) => {
-      const sellerId = req.params.sellerId;
+    app.get("/seller-banner", verify, async (req, res) => {
+      const { sellerId, email } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
       try {
         const result = await seller_banner.find({ sellerId }).toArray();
         if (result?.length) {
@@ -353,8 +513,12 @@ const run = async () => {
     /*========================================
         1. Seller location section start here
       ========================================*/
-    app.get("/seller-location/:sellerId", async (req, res) => {
-      const sellerId = req.params.sellerId;
+    app.get("/seller-location", verify, async (req, res) => {
+      const { sellerId, email } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       try {
         const result = await seller_location.findOne({ sellerId });
         if (result) {
@@ -370,7 +534,12 @@ const run = async () => {
     /*====================================
         1. Message section start here
       ====================================*/
-    app.get("/admin-message", async (req, res) => {
+    app.get("/admin-message", verify, async (req, res) => {
+      const { email } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       try {
         const result = await admin_message.find({}).toArray();
         res.status(200).json(result);
@@ -379,8 +548,12 @@ const run = async () => {
       }
     });
 
-    app.post("/admin-create-message", async (req, res) => {
-      const data = req.body;
+    app.post("/admin-create-message", verify, async (req, res) => {
+      const { email, data } = req.body;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       try {
         const result = await admin_message.insertOne({
           ...data,
@@ -392,8 +565,12 @@ const run = async () => {
       }
     });
 
-    app.patch("/admin-update-message", async (req, res) => {
-      const { _id, data } = req.body;
+    app.patch("/admin-update-message", verify, async (req, res) => {
+      const { _id, data, email } = req.body;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       const option = { upsert: true };
       const filter = {
         _id: new ObjectId(_id),
@@ -419,8 +596,13 @@ const run = async () => {
       }
     });
 
-    app.delete("/admin-delete-message/:id", async (req, res) => {
-      const query = { _id: new ObjectId(req.params.id) };
+    app.delete("/admin-delete-message", verify, async (req, res) => {
+      const { id, email } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+      const query = { _id: new ObjectId(id) };
       try {
         const result = await admin_message.deleteOne(query);
         if (result.deletedCount === 1) {
@@ -437,19 +619,44 @@ const run = async () => {
         1. Message section start here
       ====================================*/
 
-    app.get("/categories", async (req, res) => {
+    app.get("/categories", verify, async (req, res) => {
+      const { email, page, limit, search = "" } = req.query;
+
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
+      const query = {
+        category: { $regex: search, $options: "i" },
+      };
+
       try {
-        const result = await category.find({}).toArray();
-        res.status(200).json(result);
+        const result = await category
+          .find(query)
+          .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
+          .toArray();
+        const total = await category.countDocuments();
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "An error occurred" });
       }
     });
 
-    app.post("/create-category", async (req, res) => {
-      const data = req.body;
+    app.post("/create-category", verify, async (req, res) => {
+      const { data, email } = req.body;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
       try {
-        const result = await category.insertOne(data);
+        const result = await category.insertOne({
+          ...data,
+          createdAt: moment().toISOString(),
+        });
         res.status(200).json(result);
       } catch (error) {
         if (error.code === 11000) {
@@ -460,8 +667,13 @@ const run = async () => {
       }
     });
 
-    app.patch("/update-category", async (req, res) => {
-      const { _id, data } = req.body;
+    app.patch("/update-category", verify, async (req, res) => {
+      const { _id, data, email } = req.body;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
       const option = {
         upsert: true,
       };
@@ -488,10 +700,15 @@ const run = async () => {
       }
     });
 
-    app.delete("/delete-category/:id", async (req, res) => {
-      const id = req.params.id;
+    app.delete("/delete-category", verify, async (req, res) => {
+      const { email, id } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       try {
         const result = await category.deleteOne({ _id: new ObjectId(id) });
+        res.status(200).json(result);
       } catch (error) {
         res
           .status(500)
@@ -502,17 +719,23 @@ const run = async () => {
     /*====================================
         1. User report section start here
       ====================================*/
-    app.get("/user-reports", async (req, res) => {
+    app.get("/user-reports", verify, async (req, res) => {
+      const { email, limit, page } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
       try {
         const result = await user_report
           .find({})
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        if (result?.length) {
-          res.status(200).json(result);
-        } else {
-          res.status(404).json({ message: "Report not found" });
-        }
+
+        const total = await user_report.countDocuments();
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding reports" });
       }
@@ -522,17 +745,23 @@ const run = async () => {
         1. User feedback section start here
       ====================================*/
 
-    app.get("/feedback", async (req, res) => {
+    app.get("/feedback", verify, async (req, res) => {
+      const { email, page, limit } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
       try {
         const result = await feedback
           .find({})
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        if (result?.length) {
-          res.status(200).json(result);
-        } else {
-          res.status(404).json({ message: "feedback not found" });
-        }
+
+        const total = await feedback.countDocuments();
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding feedback" });
       }
@@ -542,47 +771,89 @@ const run = async () => {
         3. Banner section start here
       ====================================*/
 
-    app.get("/user-order", async (req, res) => {
+    app.get("/user-order", verify, async (req, res) => {
+      const { limit, email, page, search } = req.query;
+
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
+      const query = {
+        $or: [
+          { orderId: search ? parseInt(search) : { $exists: true } },
+          { date: { $regex: search, $options: "i" } },
+          { paymentMethod: { $regex: search, $options: "i" } },
+          { status: { $regex: search, $options: "i" } },
+        ],
+      };
+
       try {
         const result = await user_order
-          .find({})
+          .find(query)
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        if (result?.length) {
-          res.status(200).json(result);
-        } else {
-          res.status(404).json({ message: "order not found" });
-        }
+        const total = await user_order.countDocuments();
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding order" });
       }
     });
 
-    app.get("/order-by-sellerId/:sellerId", async (req, res) => {
-      const sellerId = req.params.sellerId;
+    app.get("/order-by-sellerId", verify, async (req, res) => {
+      const { sellerId, email, limit, page, search = "" } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+      const query = {
+        sellerId,
+        $or: [
+          { orderId: search ? parseInt(search) : { $exists: true } },
+          { date: { $regex: search, $options: "i" } },
+          { paymentMethod: { $regex: search, $options: "i" } },
+          { status: { $regex: search, $options: "i" } },
+        ],
+      };
+
       try {
         const result = await user_order
-          .find({ sellerId })
+          .find(query)
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        if (result?.length) {
-          res.status(200).json(result);
-        } else {
-          res.status(404).json({ message: "order not found" });
-        }
+
+        const total = await user_order.countDocuments({ sellerId });
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding order" });
       }
     });
 
-    app.get("/order-by-userId/:userId", async (req, res) => {
-      const userId = req.params.userId;
+    app.get("/order-by-userId", verify, async (req, res) => {
+      const { userId, email, limit, page } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+      const query = {
+        userId,
+        status: { $ne: "cancelled" },
+      };
+
       try {
         const result = await user_order
-          .find({ userId })
+          .find(query)
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        res.status(200).json(result);
+
+        const total = await user_order.countDocuments({ userId });
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding order" });
       }
@@ -604,53 +875,77 @@ const run = async () => {
     /*=========================================
         3. Product review section start here
       =========================================*/
-    app.get("/product-review/:productId", async (req, res) => {
-      const productId = req.params.productId;
+    app.get("/product-review", verify, async (req, res) => {
+      const { productId, email, search = "", limit, page } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
+      const query = {
+        "productInfo.productId": productId,
+        $or: [
+          { reviewMessage: { $regex: search, $options: "i" } },
+          { "userInfo.fName": { $regex: search, $options: "i" } },
+          { "userInfo.lName": { $regex: search, $options: "i" } },
+          { "userInfo.phone": { $regex: search, $options: "i" } },
+        ],
+      };
 
       try {
         const result = await user_review
-          .find({ "productInfo.productId": productId })
+          .find(query)
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        if (result?.length) {
-          res.status(200).json(result);
-        } else {
-          res.status(404).json({ message: "Review not found" });
-        }
+
+        const total = await user_review.countDocuments({
+          "productInfo.productId": productId,
+        });
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding review" });
       }
     });
 
-    app.get("/product-review-by-sellerId/:sellerId", async (req, res) => {
-      const sellerId = req.params.sellerId;
+    app.get("/product-review-by-sellerId", verify, async (req, res) => {
+      const { sellerId, email, limit, page } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       try {
         const result = await user_review
           .find({ sellerId })
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        if (result?.length) {
-          res.status(200).json(result);
-        } else {
-          res.status(404).json({ message: "Review not found" });
-        }
+
+        const total = await user_review.countDocuments({ sellerId });
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding review" });
       }
     });
 
-    app.get("/product-review-by-userId/:userId", async (req, res) => {
-      const userId = req.params.userId;
+    app.get("/product-review-by-userId", verify, async (req, res) => {
+      const { userId, email, limit, page } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
       try {
         const result = await user_review
           .find({ userId })
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        if (result?.length) {
-          res.status(200).json(result);
-        } else {
-          res.status(404).json({ message: "Review not found" });
-        }
+        const total = await user_review.countDocuments({ userId });
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding review" });
       }
@@ -660,21 +955,41 @@ const run = async () => {
         3. User section start here
       =========================================*/
 
-    app.get("/user/:status", async (req, res) => {
-      const status = req.params.status;
+    app.get("/user", verify, async (req, res) => {
+      const { status, email, search = "", page = 0, limit = 10 } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+      const query = {
+        status,
+        $or: [
+          { fName: { $regex: search, $options: "i" } },
+          { lName: { $regex: search, $options: "i" } },
+          { phone: { $regex: search, $options: "i" } },
+        ],
+      };
+
       try {
         const result = await user
-          .find({ status })
+          .find(query)
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        res.status(200).json(result);
+        const total = await user.countDocuments();
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding user" });
       }
     });
 
-    app.patch("/update-user-status", async (req, res) => {
-      const { _id, data } = req.body;
+    app.patch("/update-user-status", verify, async (req, res) => {
+      const { _id, data, email } = req.body;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       const option = { upsert: false };
       const filter = { _id: new ObjectId(_id) };
       updateData = {
@@ -694,19 +1009,33 @@ const run = async () => {
     /*=========================================
         3. Product question section start here
       =========================================*/
-    app.get("/product-questions/:productId", async (req, res) => {
-      const productId = req.params.productId;
+    app.get("/product-questions", verify, async (req, res) => {
+      const { productId, email, search = "", limit, page } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
+
+      const query = {
+        "question.productInfo.productId": productId,
+        $or: [
+          { "question.userQuestion": { $regex: search, $options: "i" } },
+          { "question.userInfo.userName": { $regex: search, $options: "i" } },
+        ],
+      };
 
       try {
         const result = await product_questions
-          .find({ "question.productInfo.productId": productId })
+          .find(query)
           .sort({ createdAt: -1 })
+          .limit(parseInt(limit))
+          .skip(parseInt(page) * parseInt(limit))
           .toArray();
-        if (result?.length) {
-          res.status(200).json(result);
-        } else {
-          res.status(404).json({ message: "Question not found" });
-        }
+
+        const total = await product_questions.countDocuments({
+          "question.productInfo.productId": productId,
+        });
+        res.status(200).json({ total, data: result });
       } catch (error) {
         res.status(500).json({ message: "Error while finding question" });
       }
