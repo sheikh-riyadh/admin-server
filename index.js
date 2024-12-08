@@ -15,8 +15,8 @@ app.use(
       "https://seller-center-32880.firebaseapp.com",
       "https://captake-web.firebaseapp.com",
       "https://captake-web.web.app",
-      "https://admin-dashboard-f546d.web.app",
-      "https://admin-dashboard-f546d.firebaseapp.com",
+      "https://admin-center-32881.web.app",
+      "https://admin-center-32881.firebaseapp.com",
     ],
     credentials: true,
   })
