@@ -15,7 +15,8 @@ app.use(
       "https://seller-center-32880.firebaseapp.com",
       "https://captake-web.firebaseapp.com",
       "https://captake-web.web.app",
-      "http://localhost:5173",
+      "https://admin-dashboard-f546d.web.app",
+      "https://admin-dashboard-f546d.firebaseapp.com",
     ],
     credentials: true,
   })
@@ -330,7 +331,7 @@ const run = async () => {
     });
 
     app.post("/admin-create-staff", verify, async (req, res) => {
-      if (data?.adminEmail !== req?.user?.email) {
+      if (req.body.adminEmail !== req?.user?.email) {
         res.status(403).json({ message: "forbidden access" });
         return;
       }
@@ -859,8 +860,12 @@ const run = async () => {
       }
     });
 
-    app.get("/cancel-order-by-userId", async (req, res) => {
-      const { userId, status } = req.query;
+    app.get("/cancel-order-by-userId", verify, async (req, res) => {
+      const { userId, status, email } = req.query;
+      if (email !== req?.user?.email) {
+        res.status(403).json({ message: "forbidden access" });
+        return;
+      }
       try {
         const result = await user_order
           .find({ userId, status })
