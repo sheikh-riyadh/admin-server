@@ -111,7 +111,6 @@ const run = async () => {
         return;
       }
       const query = {
-        status,
         $or: [
           { fullName: { $regex: search, $options: "i" } },
           { businessName: { $regex: search, $options: "i" } },
@@ -119,6 +118,10 @@ const run = async () => {
           { email: { $regex: search, $options: "i" } },
         ],
       };
+
+      if(status){
+        query.status=status
+      }
 
       try {
         const result = await seller
@@ -967,13 +970,15 @@ const run = async () => {
         return;
       }
       const query = {
-        status,
         $or: [
           { fName: { $regex: search, $options: "i" } },
           { lName: { $regex: search, $options: "i" } },
           { phone: { $regex: search, $options: "i" } },
         ],
       };
+      if(status){
+        query.status=status
+      }
 
       try {
         const result = await user
